@@ -37,15 +37,19 @@ const institutions = [
 ];
 
 await mongoose.connect(process.env.MONGO_URI);
-await Institution.deleteMany({});
-await Institution.insertMany(institutions);
+if ((await Institution.countDocuments()) === 0) {
+  await Institution.insertMany(institutions);
+  console.log('Demo institutions added');
+} else {
+  console.log('Institutions already exist, skipped');
+}
 
 const adminEmail = 'admin@applyhub.test';
 if (!(await User.findOne({ email: adminEmail }))) {
   await User.create({
     name: 'Admin',
     email: adminEmail,
-    password: await bcrypt.hash('Admin@12345', 10),
+    password: await bcrypt.hash('change-me', 10),
     role: 'admin',
   });
 }
