@@ -6,6 +6,7 @@ import Profile from './pages/Profile';
 import Institutions from './pages/Institutions';
 import Recommendations from './pages/Recommendations';
 import Applications from './pages/Applications';
+import Admin from './pages/Admin';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -22,6 +23,7 @@ function Navbar() {
         <Link to="/institutions">Institutions</Link>
         {user && <Link to="/recommendations">Recommendations</Link>}
         {user && <Link to="/applications">My Applications</Link>}
+        {user?.role === 'admin' && <Link to="/admin">Admin</Link>}
         {user && <Link to="/profile">Profile</Link>}
         <span className="ml-auto" />
         {user ? (
@@ -48,6 +50,7 @@ export default function App() {
           <Route path="/profile" element={<Protected><Profile /></Protected>} />
           <Route path="/recommendations" element={<Protected><Recommendations /></Protected>} />
           <Route path="/applications" element={<Protected><Applications /></Protected>} />
+          <Route path="/admin" element={<Admin />} />
           <Route path="*" element={<p>Page not found</p>} />
         </Routes>
       </main>
