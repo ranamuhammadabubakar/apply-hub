@@ -11,25 +11,25 @@ function scoreProgram(profile, inst, program) {
 
   if (program.field === profile.field) {
     score += 40;
-    reasons.push('Aap ki field se match');
+    reasons.push('Matches your field of interest');
   } else return null;
 
   if (profile.percentage >= program.minPercentage) {
     score += 30;
-    reasons.push(`Aap ke marks (${profile.percentage}%) merit se ${profile.percentage - program.minPercentage}% zyada`);
+    reasons.push(`Your marks (${profile.percentage}%) are ${profile.percentage - program.minPercentage}% above the merit`);
   } else if (program.minPercentage - profile.percentage <= 5) {
     score += 10;
-    reasons.push('Marks merit ke qareeb hain');
+    reasons.push('Your marks are close to the merit');
   } else return null;
 
   if (profile.city && inst.city.toLowerCase() === profile.city.toLowerCase()) {
     score += 15;
-    reasons.push('Aap ke shehar mein');
+    reasons.push('In your preferred city');
   }
 
   if (!profile.maxBudget || program.feePerYear <= profile.maxBudget) {
     score += 15;
-    reasons.push('Budget mein');
+    reasons.push('Within your budget');
   }
 
   return { score, reasons };
@@ -39,7 +39,7 @@ router.get('/', requireAuth, async (req, res) => {
   const user = await User.findById(req.user.id);
   const profile = user.profile;
   if (!profile.percentage || profile.field === 'other') {
-    return res.status(400).json({ message: 'Pehle apni profile (field aur marks) complete karein' });
+    return res.status(400).json({ message: 'Please complete your profile (field and marks) first' });
   }
 
   const institutions = await Institution.find();

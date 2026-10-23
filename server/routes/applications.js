@@ -12,13 +12,13 @@ router.post('/', requireAuth, requireRole('student'), async (req, res) => {
     return res.status(400).json({ message: 'Invalid institution or program' });
   }
   if (inst.deadline && inst.deadline < new Date()) {
-    return res.status(400).json({ message: 'Deadline guzar chuki hai' });
+    return res.status(400).json({ message: 'The application deadline has passed' });
   }
   try {
     const app = await Application.create({ student: req.user.id, institution: institutionId, program });
     res.status(201).json({ application: app });
   } catch (e) {
-    if (e.code === 11000) return res.status(409).json({ message: 'Aap pehle hi apply kar chuke hain' });
+    if (e.code === 11000) return res.status(409).json({ message: 'You have already applied to this program' });
     throw e;
   }
 });

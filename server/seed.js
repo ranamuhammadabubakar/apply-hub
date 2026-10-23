@@ -9,7 +9,7 @@ const nextMonth = new Date(Date.now() + 30 * 24 * 3600 * 1000);
 const institutions = [
   {
     name: 'Demo University of Technology', type: 'university', city: 'Lahore', website: 'https://example.com',
-    description: 'Sample data. Asli data baad mein scraping/admin se aayega.', deadline: nextMonth,
+    description: 'Sample data. Real data will come later from scraping or the admin panel.', deadline: nextMonth,
     programs: [
       { name: 'BS Computer Science', field: 'cs', minPercentage: 70, feePerYear: 250000 },
       { name: 'BS Software Engineering', field: 'engineering', minPercentage: 72, feePerYear: 260000 },
