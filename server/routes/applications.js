@@ -2,6 +2,8 @@ import { Router } from 'express';
 import Application from '../models/Application.js';
 import Institution from '../models/Institution.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { sendStatusEmail } from '../utils/mailer.js';
+
 
 const router = Router();
 
@@ -43,7 +45,16 @@ router.patch('/:id/status', requireAuth, requireRole('admin'), async (req, res) 
   if (!['submitted', 'under-review', 'accepted', 'rejected'].includes(status)) {
     return res.status(400).json({ message: 'Invalid status' });
   }
-  const item = await Application.findByIdAndUpdate(req.params.id, { status }, { new: true });
+  const item = await Application.findByIdAndUpdate(req.params.id, { status }, { new: true })
+    .populate('student', 'name email')
+    .populate('institution', 'name');
+  if (!item) return res.status(404).json({ message: 'Application not found' });
+
+  try {
+    await sendStatusEmail(item);
+  } catch (err) {
+    console.error('Email failed:', err.message);
+  }
   res.json({ application: item });
 });
 
