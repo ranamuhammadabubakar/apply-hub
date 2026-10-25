@@ -10,6 +10,7 @@ import profileRoutes from './routes/profile.js';
 import institutionRoutes from './routes/institutions.js';
 import recommendationRoutes from './routes/recommendations.js';
 import applicationRoutes from './routes/applications.js';
+import counselingRoutes from './routes/counseling.js';
 
 let connecting = null;
 
@@ -48,7 +49,12 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/institutions', institutionRoutes);
 app.use('/api/recommendations', recommendationRoutes);
 app.use('/api/applications', applicationRoutes);
+app.use('/api/counseling', counselingRoutes);
 
 app.use((req, res) => res.status(404).json({ message: 'Route not found' }));
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ message: 'Server error' });
+});
 
 export default app;
