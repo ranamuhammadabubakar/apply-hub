@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 
 const STARTERS = [
@@ -8,6 +9,8 @@ const STARTERS = [
 ];
 
 export default function Counseling() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [messages, setMessages] = useState([
     { role: 'assistant', text: 'Hi! I am your Apply Hub career counselor. Tell me about your interests, or pick a question below.' },
   ]);
@@ -15,17 +18,32 @@ export default function Counseling() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const bottomRef = useRef(null);
+  const startedRef = useRef(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
+  // If we came from the quiz, send its result as the first message (only once)
+  useEffect(() => {
+    const first = location.state?.initialMessage;
+    if (first && !startedRef.current) {
+      startedRef.current = true;
+      navigate(location.pathname, { replace: true, state: null }); // clear it so a refresh does not resend
+      send(first);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function send(text) {
     const clean = text.trim();
     if (!clean || loading) return;
 
-    const next = [...messages, { role: 'user', text: clean }];
-    setMessages(next);
+    let next;
+    setMessages((prev) => {
+      next = [...prev, { role: 'user', text: clean }];
+      return next;
+    });
     setInput('');
     setError('');
     setLoading(true);
@@ -64,7 +82,7 @@ export default function Counseling() {
         <div ref={bottomRef} />
       </div>
 
-      {messages.length === 1 && (
+      {messages.length === 1 && !loading && (
         <div className="flex flex-wrap gap-2 mt-3">
           {STARTERS.map((s) => (
             <button
