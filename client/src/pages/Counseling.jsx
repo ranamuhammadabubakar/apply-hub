@@ -8,17 +8,28 @@ const STARTERS = [
   'What can I study after FSc Pre-Engineering?',
 ];
 
+const GREETING = {
+  role: 'assistant',
+  text: 'Hi! I am your Apply Hub career counselor. Tell me about your interests, or pick a question below.',
+};
+
 export default function Counseling() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [messages, setMessages] = useState([
-    { role: 'assistant', text: 'Hi! I am your Apply Hub career counselor. Tell me about your interests, or pick a question below.' },
-  ]);
+  const [messages, setMessages] = useState([GREETING]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const bottomRef = useRef(null);
   const startedRef = useRef(false);
+  const messagesRef = useRef([GREETING]); // always holds the latest messages
+  const loadingRef = useRef(false);
+
+  // Update state and the ref together
+  function updateMessages(list) {
+    messagesRef.current = list;
+    setMessages(list);
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -37,24 +48,23 @@ export default function Counseling() {
 
   async function send(text) {
     const clean = text.trim();
-    if (!clean || loading) return;
+    if (!clean || loadingRef.current) return;
 
-    let next;
-    setMessages((prev) => {
-      next = [...prev, { role: 'user', text: clean }];
-      return next;
-    });
+    const next = [...messagesRef.current, { role: 'user', text: clean }];
+    updateMessages(next);
     setInput('');
     setError('');
+    loadingRef.current = true;
     setLoading(true);
 
     try {
       // Skip the greeting so the first message sent is from the student
       const data = await api('/counseling', { method: 'POST', body: { messages: next.slice(1) } });
-      setMessages((m) => [...m, { role: 'assistant', text: data.reply }]);
+      updateMessages([...messagesRef.current, { role: 'assistant', text: data.reply }]);
     } catch (err) {
       setError(err.message);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   }
