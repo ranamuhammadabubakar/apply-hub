@@ -16,6 +16,8 @@ function formatDate(value) {
   return new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+const keyOf = (institutionId, program) => `${institutionId}-${program}`;
+
 export default function Recommendations() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,14 +27,18 @@ export default function Recommendations() {
   const [applied, setApplied] = useState([]);
 
   useEffect(() => {
-    api('/recommendations')
-      .then((d) => setItems(d.items))
+    // Load recommendations and the student's existing applications together
+    Promise.all([api('/recommendations'), api('/applications/mine')])
+      .then(([rec, mine]) => {
+        setItems(rec.items);
+        setApplied(mine.items.map((a) => keyOf(a.institution?._id, a.program)));
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
 
   async function apply(r) {
-    const key = `${r.institutionId}-${r.program}`;
+    const key = keyOf(r.institutionId, r.program);
     setMsg(null);
     setApplying(key);
     try {
@@ -75,7 +81,7 @@ export default function Recommendations() {
 
       <div className="space-y-3">
         {items.map((r) => {
-          const key = `${r.institutionId}-${r.program}`;
+          const key = keyOf(r.institutionId, r.program);
           const isApplied = applied.includes(key);
           return (
             <div key={key} className="bg-white p-4 rounded-xl shadow flex flex-wrap gap-3 items-center">
