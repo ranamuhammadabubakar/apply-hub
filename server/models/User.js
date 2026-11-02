@@ -18,6 +18,9 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true, minlength: 6 },
     role: { type: String, enum: ['student', 'institute', 'admin'], default: 'student' },
     profile: { type: profileSchema, default: () => ({}) },
+    // Password reset: only the hash of the token is stored, never the token itself
+    resetTokenHash: { type: String },
+    resetTokenExpires: { type: Date },
   },
   { timestamps: true }
 );

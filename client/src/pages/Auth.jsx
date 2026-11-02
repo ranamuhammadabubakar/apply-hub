@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Auth() {
@@ -64,6 +64,11 @@ export default function Auth() {
         )}
         <input className="w-full border rounded p-2" type="email" placeholder="Email" value={form.email} onChange={set('email')} required />
         <input className="w-full border rounded p-2" type="password" placeholder="Password (min 6 characters)" value={form.password} onChange={set('password')} required />
+        {mode === 'login' && (
+          <Link to="/forgot-password" className="block text-sm text-indigo-700 text-right">
+            Forgot password?
+          </Link>
+        )}
         {error && <p className="text-red-600 text-sm">{error}</p>}
         <button disabled={busy} className="w-full bg-indigo-700 text-white py-2 rounded disabled:opacity-60">
           {busy ? 'Please wait...' : mode === 'login' ? 'Login' : 'Register'}

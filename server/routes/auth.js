@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import { requireAuth } from '../middleware/auth.js';
+import { sendPasswordResetEmail } from '../utils/mailer.js';
 
 const router = Router();
 
@@ -21,6 +22,14 @@ const DEMO_PROFILE = {
   maxBudget: 300000,
   interests: ['Computer', 'Software', 'Data'],
 };
+
+// Password reset settings
+const RESET_MINUTES = 15;
+const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+const appUrl = () =>
+  (process.env.APP_URL || process.env.CLIENT_URL?.split(',')[0] || 'http://localhost:5173')
+    .trim()
+    .replace(/\/$/, '');
 
 router.post('/register', async (req, res) => {
   try {
@@ -81,6 +90,56 @@ router.post('/demo', async (req, res) => {
   } catch (err) {
     console.error('Demo login error:', err);
     res.status(500).json({ message: 'Demo login is not available right now' });
+  }
+});
+
+// Step 1 of password reset: email a link with a one-time token
+router.post('/forgot-password', async (req, res) => {
+  // Same reply whether or not the email exists, so nobody can check who is registered
+  const reply = { message: 'If this email is registered, a reset link has been sent. Please check your inbox.' };
+  try {
+    const email = (req.body.email || '').toLowerCase().trim();
+    if (!email) return res.status(400).json({ message: 'Email is required' });
+
+    const user = await User.findOne({ email });
+    if (!user || email === DEMO_EMAIL) return res.json(reply);
+
+    const token = crypto.randomBytes(32).toString('hex');
+    user.resetTokenHash = hashToken(token);
+    user.resetTokenExpires = new Date(Date.now() + RESET_MINUTES * 60 * 1000);
+    await user.save();
+
+    await sendPasswordResetEmail(user, `${appUrl()}/reset-password?token=${token}`);
+    res.json(reply);
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ message: 'Unable to send the reset email right now. Please try again later.' });
+  }
+});
+
+// Step 2 of password reset: check the token and save the new password
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password || password.length < 6) {
+      return res.status(400).json({ message: 'A valid link and a new password (min 6 chars) are required' });
+    }
+
+    const user = await User.findOne({
+      resetTokenHash: hashToken(token),
+      resetTokenExpires: { $gt: new Date() },
+    });
+    if (!user) return res.status(400).json({ message: 'This reset link is invalid or has expired' });
+
+    user.password = await bcrypt.hash(password, 10);
+    user.resetTokenHash = undefined; // the link can only be used once
+    user.resetTokenExpires = undefined;
+    await user.save();
+
+    res.json({ message: 'Your password has been updated. You can now log in.' });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ message: 'Unable to reset the password right now' });
   }
 });
 

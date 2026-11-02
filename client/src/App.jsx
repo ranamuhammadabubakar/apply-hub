@@ -9,6 +9,8 @@ import Applications from './pages/Applications';
 import Admin from './pages/Admin';
 import Counseling from './pages/Counseling';
 import Quiz from './pages/Quiz';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -50,6 +52,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/login" element={<Auth />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/institutions" element={<Institutions />} />
           <Route path="/profile" element={<Protected><Profile /></Protected>} />
           <Route path="/recommendations" element={<Protected><Recommendations /></Protected>} />
