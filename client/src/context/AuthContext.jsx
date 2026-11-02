@@ -31,13 +31,20 @@ export function AuthProvider({ children }) {
     setUser(d.user);
   };
 
+  // One-click login as the demo student (no password needed)
+  const demoLogin = async () => {
+    const d = await api('/auth/demo', { method: 'POST' });
+    localStorage.setItem('token', d.token);
+    setUser(d.user);
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, setUser, loading, login, register, demoLogin, logout }}>
       {children}
     </AuthContext.Provider>
   );
