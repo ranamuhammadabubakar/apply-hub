@@ -166,8 +166,21 @@ router.get('/', requireAuth, async (req, res) => {
       }
     }
 
-    results.sort((a, b) => b.score - a.score);
-    res.json({ items: results.slice(0, 30), total: results.length, profileField: profile.field });
+        results.sort((a, b) => b.score - a.score);
+
+    // Show at most 2 programs per institution, so students see more universities
+    const perInstitution = new Map();
+    const top = [];
+    for (const r of results) {
+      const id = String(r.institutionId);
+      const count = perInstitution.get(id) || 0;
+      if (count >= 2) continue;
+      perInstitution.set(id, count + 1);
+      top.push(r);
+      if (top.length === 30) break;
+    }
+
+    res.json({ items: top, total: results.length, profileField: profile.field });
   } catch (err) {
     console.error('Recommendations error:', err);
     res.status(500).json({ message: 'Unable to retrieve recommendations at this time.' });
