@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 
 const TYPE_LABELS = {
@@ -8,6 +9,18 @@ const TYPE_LABELS = {
   academy: 'Academy',
 };
 
+const PROVINCES = [
+  'Punjab',
+  'Sindh',
+  'Khyber Pakhtunkhwa',
+  'Balochistan',
+  'Islamabad Capital Territory',
+  'Azad Jammu & Kashmir',
+  'Gilgit Baltistan',
+];
+
+const isKnown = (value) => value !== null && value !== undefined;
+
 function formatDate(value) {
   return new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
@@ -15,51 +28,76 @@ function formatDate(value) {
 const isPast = (value) => value && new Date(value) < new Date();
 
 export default function Institutions() {
+  const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [pages, setPages] = useState(1);
+  const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
   const [city, setCity] = useState('');
-  const [type, setType] = useState('');
+  // A link like /institutions?province=Punjab opens with that province already selected
+  const [province, setProvince] = useState(searchParams.get('province') || '');
+  const [sector, setSector] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Go back to page 1 whenever a filter changes
   useEffect(() => {
-    const params = new URLSearchParams();
+    setPage(1);
+  }, [q, city, province, sector]);
+
+  useEffect(() => {
+    const params = new URLSearchParams({ page: String(page) });
     if (q) params.set('q', q);
     if (city) params.set('city', city);
-    if (type) params.set('type', type);
+    if (province) params.set('province', province);
+    if (sector) params.set('sector', sector);
     setLoading(true);
     const t = setTimeout(() => {
       api(`/institutions?${params}`)
         .then((d) => {
           setItems(d.items);
+          setTotal(d.total);
+          setPages(d.pages);
           setError('');
         })
         .catch((e) => setError(e.message))
         .finally(() => setLoading(false));
     }, 300);
     return () => clearTimeout(t);
-  }, [q, city, type]);
+  }, [q, city, province, sector, page]);
+
+  function goTo(p) {
+    setPage(p);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   return (
     <div>
       <h2 className="text-2xl font-semibold mb-1">Institutions</h2>
       <p className="text-sm text-gray-500 mb-4">
-        Admission details change every year. Always confirm merit, fees and deadlines on the official website.
+        All HEC recognised universities. Admission details change every year, so always confirm merit, fees and
+        deadlines on the official website.
       </p>
 
-      <div className="flex flex-wrap gap-3 mb-4">
+      <div className="flex flex-wrap gap-3 mb-2">
         <input className="border rounded p-2 flex-1 min-w-48" placeholder="Search by name" value={q} onChange={(e) => setQ(e.target.value)} />
-        <input className="border rounded p-2 w-40" placeholder="City" value={city} onChange={(e) => setCity(e.target.value)} />
-        <select className="border rounded p-2" value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="">All types</option>
-          {Object.entries(TYPE_LABELS).map(([v, l]) => (
-            <option key={v} value={v}>{l}</option>
+        <input className="border rounded p-2 w-36" placeholder="City" value={city} onChange={(e) => setCity(e.target.value)} />
+        <select className="border rounded p-2" value={province} onChange={(e) => setProvince(e.target.value)}>
+          <option value="">All provinces</option>
+          {PROVINCES.map((p) => (
+            <option key={p} value={p}>{p}</option>
           ))}
         </select>
+        <select className="border rounded p-2" value={sector} onChange={(e) => setSector(e.target.value)}>
+          <option value="">Public and private</option>
+          <option value="public">Public</option>
+          <option value="private">Private</option>
+        </select>
       </div>
+      <p className="text-xs text-gray-500 mb-4">{loading ? 'Loading...' : `${total} institutions found`}</p>
 
       {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
-      {loading && items.length === 0 && <p className="text-gray-500">Loading institutions...</p>}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {items.map((i) => (
@@ -75,37 +113,46 @@ export default function Institutions() {
               </span>
             </div>
             <p className="text-sm text-gray-600">
-              {i.city} · {TYPE_LABELS[i.type] || i.type}
+              {i.city}
+              {i.province && i.province !== i.city ? `, ${i.province}` : ''} · {TYPE_LABELS[i.type] || i.type}
+              {i.category ? ` · ${i.category}` : ''}
             </p>
             {i.description && <p className="text-sm text-gray-700 mt-1">{i.description}</p>}
 
-            <ul className="mt-3 text-sm space-y-1">
-              {i.programs.map((p) => {
-                const deadline = p.deadline || i.deadline;
-                return (
-                  <li key={p._id} className="border-t border-gray-100 pt-1">
-                    <span className="font-medium">{p.name}</span>
-                    <span className="text-gray-600">
-                      {' '}· min {p.minPercentage}% · PKR {p.feePerYear.toLocaleString('en-US')}/yr
-                    </span>
-                    {deadline && (
-                      <span className={isPast(deadline) ? 'text-red-600' : 'text-gray-600'}>
-                        {' '}· {isPast(deadline) ? 'Closed' : `Apply by ${formatDate(deadline)}`}
+            {i.programs.length > 0 ? (
+              <ul className="mt-3 text-sm space-y-1">
+                {i.programs.map((p) => {
+                  const deadline = p.deadline || i.deadline;
+                  return (
+                    <li key={p._id} className="border-t border-gray-100 pt-1">
+                      <span className="font-medium">{p.name}</span>
+                      {p.accreditedBy && (
+                        <span className="ml-1.5 text-[11px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 align-middle">
+                          {p.accreditedBy} accredited
+                        </span>
+                      )}
+                      <span className="text-gray-600">
+                        {' '}· {isKnown(p.minPercentage) ? `min ${p.minPercentage}%` : 'merit not published'}
+                        {' '}· {isKnown(p.feePerYear) ? `PKR ${p.feePerYear.toLocaleString('en-US')}/yr` : 'fee not published'}
                       </span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+                      {deadline && (
+                        <span className={isPast(deadline) ? 'text-red-600' : 'text-gray-600'}>
+                          {' '}· {isPast(deadline) ? 'Closed' : `Apply by ${formatDate(deadline)}`}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm text-gray-500">
+                Program details are not added yet. Please check the official website.
+              </p>
+            )}
 
             <div className="mt-auto pt-3 flex flex-wrap items-center gap-2">
               {i.admissionUrl && (
-                <a
-                  href={i.admissionUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="bg-indigo-700 text-white text-sm px-3 py-1.5 rounded"
-                >
+                <a href={i.admissionUrl} target="_blank" rel="noreferrer" className="bg-indigo-700 text-white text-sm px-3 py-1.5 rounded">
                   Apply on official portal
                 </a>
               )}
@@ -122,6 +169,20 @@ export default function Institutions() {
         ))}
         {!loading && items.length === 0 && <p className="text-gray-500">No institutions found.</p>}
       </div>
+
+      {pages > 1 && (
+        <div className="flex items-center justify-center gap-3 mt-6">
+          <button onClick={() => goTo(page - 1)} disabled={page <= 1} className="border rounded px-3 py-1.5 bg-white disabled:opacity-40">
+            Previous
+          </button>
+          <span className="text-sm text-gray-600">
+            Page {page} of {pages}
+          </span>
+          <button onClick={() => goTo(page + 1)} disabled={page >= pages} className="border rounded px-3 py-1.5 bg-white disabled:opacity-40">
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }

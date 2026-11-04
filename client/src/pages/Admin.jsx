@@ -13,6 +13,7 @@ const emptyForm = {
   description: '', deadline: '', programsText: '', verifiedNow: false,
 };
 
+const isKnown = (value) => value !== null && value !== undefined;
 const toDateInput = (value) => (value ? String(value).slice(0, 10) : '');
 
 function formatDate(value) {
@@ -20,16 +21,31 @@ function formatDate(value) {
 }
 
 // Program line: Name | field | min % | fee per year | deadline (optional, YYYY-MM-DD)
+// An empty min % or fee means "not published yet".
 const programsToText = (programs = []) =>
   programs
     .map((p) => {
-      const parts = [p.name, p.field, p.minPercentage, p.feePerYear];
+      const parts = [
+        p.name,
+        p.field,
+        isKnown(p.minPercentage) ? p.minPercentage : '',
+        isKnown(p.feePerYear) ? p.feePerYear : '',
+      ];
       if (p.deadline) parts.push(toDateInput(p.deadline));
       return parts.join(' | ');
     })
     .join('\n');
 
-function textToPrograms(text) {
+// Empty text -> null (not published); otherwise a number
+function toNumberOrNull(text) {
+  if (text === undefined || text === '') return null;
+  const n = Number(text);
+  return Number.isNaN(n) ? null : n;
+}
+
+// originalPrograms keeps fields that are not in the text, such as the accreditation council
+function textToPrograms(text, originalPrograms = []) {
+  const byName = new Map(originalPrograms.map((p) => [p.name.toLowerCase(), p]));
   return text
     .split('\n')
     .map((l) => l.trim())
@@ -42,12 +58,14 @@ function textToPrograms(text) {
       if (deadline && Number.isNaN(Date.parse(deadline))) {
         throw new Error(`Invalid deadline in line: "${line}". Use the format YYYY-MM-DD`);
       }
+      const original = byName.get(name.toLowerCase());
       return {
         name,
         field,
-        minPercentage: Number(min) || 0,
-        feePerYear: Number(fee) || 0,
+        minPercentage: toNumberOrNull(min),
+        feePerYear: toNumberOrNull(fee),
         deadline: deadline || null,
+        accreditedBy: original?.accreditedBy || null,
       };
     });
 }
@@ -56,27 +74,44 @@ export default function Admin() {
   const { user, loading } = useAuth();
   const [tab, setTab] = useState('institutions');
   const [institutions, setInstitutions] = useState([]);
+  const [totalInstitutions, setTotalInstitutions] = useState(0);
   const [applications, setApplications] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
+  const [editingPrograms, setEditingPrograms] = useState([]);
   const [msg, setMsg] = useState('');
+  const [search, setSearch] = useState('');
 
   const isAdmin = user?.role === 'admin';
 
-  async function loadInstitutions() {
-    const d = await api('/institutions');
+  async function loadInstitutions(query = search) {
+    const params = new URLSearchParams({ limit: '50' });
+    if (query) params.set('q', query);
+    const d = await api(`/institutions?${params}`);
     setInstitutions(d.items);
+    setTotalInstitutions(d.total);
   }
+
   async function loadApplications() {
     const d = await api('/applications');
     setApplications(d.items);
   }
 
+  // Applications load once
   useEffect(() => {
     if (!isAdmin) return;
-    loadInstitutions().catch((e) => setMsg(e.message));
     loadApplications().catch((e) => setMsg(e.message));
   }, [isAdmin]);
+
+  // Institutions reload whenever the search text changes (with a short delay while typing)
+  useEffect(() => {
+    if (!isAdmin) return;
+    const t = setTimeout(() => {
+      loadInstitutions(search).catch((e) => setMsg(e.message));
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, search]);
 
   if (loading) return <p>Loading...</p>;
   if (!isAdmin) return <Navigate to="/" replace />;
@@ -85,6 +120,7 @@ export default function Admin() {
 
   function startEdit(i) {
     setEditingId(i._id);
+    setEditingPrograms(i.programs || []);
     setForm({
       name: i.name,
       type: i.type,
@@ -102,6 +138,7 @@ export default function Admin() {
 
   function resetForm() {
     setEditingId(null);
+    setEditingPrograms([]);
     setForm(emptyForm);
   }
 
@@ -118,7 +155,7 @@ export default function Admin() {
         admissionUrl: form.admissionUrl,
         description: form.description,
         deadline: form.deadline || null,
-        programs: textToPrograms(form.programsText),
+        programs: textToPrograms(form.programsText, editingPrograms),
       };
       if (form.verifiedNow) body.lastVerifiedAt = new Date().toISOString();
 
@@ -132,11 +169,13 @@ export default function Admin() {
     }
   }
 
-  async function removeInstitution(id) {
-    if (!window.confirm('Delete this institution?')) return;
+  async function removeInstitution(i) {
+    if (!window.confirm(`Delete "${i.name}"? Its applications will also be deleted.`)) return;
     try {
-      await api(`/institutions/${id}`, { method: 'DELETE' });
+      const d = await api(`/institutions/${i._id}`, { method: 'DELETE' });
+      setMsg(`Deleted "${i.name}" and ${d.deletedApplications || 0} related application(s).`);
       await loadInstitutions();
+      await loadApplications();
     } catch (err) {
       setMsg(err.message);
     }
@@ -195,13 +234,15 @@ export default function Admin() {
               Programs, one per line: Name | field | min % | fee per year | deadline (optional)
               <textarea
                 className="w-full border rounded p-2 mt-1 font-mono text-sm"
-                rows="5"
+                rows="6"
                 placeholder={'BS Computer Science | cs | 70 | 250000 | 2026-11-30'}
                 value={form.programsText}
                 onChange={set('programsText')}
               />
             </label>
-            <p className="text-xs text-gray-500">Fields: {FIELDS.join(', ')}. Deadline format: YYYY-MM-DD.</p>
+            <p className="text-xs text-gray-500">
+              Fields: {FIELDS.join(', ')}. Leave min % or fee empty if it is not published yet. Deadline format: YYYY-MM-DD.
+            </p>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -216,6 +257,19 @@ export default function Admin() {
             </div>
           </form>
 
+          <div className="space-y-2">
+            <input
+              className="border rounded p-2 w-full bg-white"
+              placeholder="Search institutions by name (e.g. FAST, UET, NUST)"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <p className="text-xs text-gray-500">
+              Showing {institutions.length} of {totalInstitutions} institutions
+              {totalInstitutions > institutions.length ? '. Use search to find the rest.' : ''}
+            </p>
+          </div>
+
           <div className="space-y-3">
             {institutions.map((i) => (
               <div key={i._id} className="bg-white p-4 rounded-xl shadow flex flex-wrap items-center gap-3">
@@ -223,6 +277,7 @@ export default function Admin() {
                   <h3 className="font-semibold">{i.name}</h3>
                   <p className="text-sm text-gray-600">
                     {i.city} · {i.type} · {i.sector || 'private'} · {i.programs.length} programs
+                    {i.source === 'hec' ? ' · from HEC' : ''}
                   </p>
                   <p className="text-xs mt-1">
                     {i.lastVerifiedAt ? (
@@ -243,10 +298,10 @@ export default function Admin() {
                   </p>
                 </div>
                 <button onClick={() => startEdit(i)} className="border px-3 py-1 rounded">Edit</button>
-                <button onClick={() => removeInstitution(i._id)} className="bg-red-600 text-white px-3 py-1 rounded">Delete</button>
+                <button onClick={() => removeInstitution(i)} className="bg-red-600 text-white px-3 py-1 rounded">Delete</button>
               </div>
             ))}
-            {institutions.length === 0 && <p className="text-gray-500">No institutions yet.</p>}
+            {institutions.length === 0 && <p className="text-gray-500">No institutions found.</p>}
           </div>
         </div>
       )}
@@ -256,7 +311,7 @@ export default function Admin() {
           {applications.map((a) => (
             <div key={a._id} className="bg-white p-4 rounded-xl shadow flex flex-wrap items-center gap-3">
               <div className="flex-1 min-w-60">
-                <h3 className="font-semibold">{a.program} — {a.institution?.name}</h3>
+                <h3 className="font-semibold">{a.program} — {a.institution?.name || 'Deleted institution'}</h3>
                 <p className="text-sm text-gray-600">
                   {a.student?.name} ({a.student?.email}) · {new Date(a.createdAt).toLocaleDateString()}
                 </p>

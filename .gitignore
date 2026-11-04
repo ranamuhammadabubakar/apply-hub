@@ -1,3 +1,6 @@
 node_modules
 .env
 dist
+server/scripts/*.json
+server/scripts/*.html
+server/scripts/*.txt
