@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import ChatWidget from './components/ChatWidget';
 import Home from './pages/Home';
 import Auth from './pages/Auth';
 import Profile from './pages/Profile';
@@ -206,6 +207,7 @@ export default function App() {
           <Route path="*" element={<p>Page not found</p>} />
         </Routes>
       </main>
+      <ChatWidget />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 const TYPE_LABELS = {
   university: 'University',
@@ -19,7 +20,25 @@ const PROVINCES = [
   'Gilgit Baltistan',
 ];
 
+const CHANCE_STYLES = {
+  Safe: 'bg-green-100 text-green-800',
+  'Good chance': 'bg-blue-100 text-blue-800',
+  Reach: 'bg-orange-100 text-orange-800',
+  Unlikely: 'bg-red-100 text-red-700',
+  'Check merit': 'bg-gray-100 text-gray-700',
+};
+
 const isKnown = (value) => value !== null && value !== undefined;
+
+// Same thresholds as the recommendations on the server
+function chanceFor(marks, minPercentage) {
+  if (!isKnown(minPercentage)) return 'Check merit';
+  const margin = marks - minPercentage;
+  if (margin >= 5) return 'Safe';
+  if (margin >= 0) return 'Good chance';
+  if (margin >= -5) return 'Reach';
+  return 'Unlikely';
+}
 
 function formatDate(value) {
   return new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -28,6 +47,8 @@ function formatDate(value) {
 const isPast = (value) => value && new Date(value) < new Date();
 
 export default function Institutions() {
+  const { user } = useAuth();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -40,6 +61,22 @@ export default function Institutions() {
   const [sector, setSector] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [marks, setMarks] = useState(null); // the student's FSc %, when logged in
+
+  // Where to come back to after logging in
+  const returnTo = encodeURIComponent(location.pathname + location.search);
+  const chanceLink = `/login?mode=register&next=${returnTo}`;
+
+  // Load the student's marks once they are logged in
+  useEffect(() => {
+    if (!user) {
+      setMarks(null);
+      return;
+    }
+    api('/profile')
+      .then((d) => setMarks(Number(d.profile?.percentage) || null))
+      .catch(() => setMarks(null));
+  }, [user]);
 
   // Go back to page 1 whenever a filter changes
   useEffect(() => {
@@ -76,12 +113,36 @@ export default function Institutions() {
     <div>
       <h2 className="text-2xl font-semibold mb-1">Institutions</h2>
       <p className="text-sm text-gray-500 mb-4">
-        All HEC recognised universities. Admission details change every year, so always confirm merit, fees and
-        deadlines on the official website.
+        HEC recognised universities and PMDC recognised colleges. Admission details change every year, so always confirm
+        merit, fees and deadlines on the official website.
       </p>
 
+      {/* Chance information */}
+      {!user && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+          <p className="flex-1 min-w-60 text-sm text-indigo-900">
+            <span className="font-semibold">Want to know if you can get in?</span> Create a free account and add your
+            marks to see your chance for every program.
+          </p>
+          <Link to={chanceLink} className="bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded">
+            See your chance
+          </Link>
+        </div>
+      )}
+      {user && !marks && (
+        <p className="mb-4 text-sm bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-xl p-3">
+          <Link to={`/profile?next=${returnTo}`} className="font-semibold underline">Add your FSc marks</Link> to see
+          your chance for every program.
+        </p>
+      )}
+      {user && marks && (
+        <p className="mb-4 text-xs text-gray-500">
+          Your chance is an estimate from your FSc marks ({marks}%). Final merit usually also includes an entry test.
+        </p>
+      )}
+
       <div className="flex flex-wrap gap-3 mb-2">
-        <input className="border rounded p-2 flex-1 min-w-48" placeholder="Search by name" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className="border rounded p-2 flex-1 min-w-48" placeholder="Search by name, e.g. LUMS, FAST, UET Lahore" value={q} onChange={(e) => setQ(e.target.value)} />
         <input className="border rounded p-2 w-36" placeholder="City" value={city} onChange={(e) => setCity(e.target.value)} />
         <select className="border rounded p-2" value={province} onChange={(e) => setProvince(e.target.value)}>
           <option value="">All provinces</option>
@@ -123,9 +184,15 @@ export default function Institutions() {
               <ul className="mt-3 text-sm space-y-1">
                 {i.programs.map((p) => {
                   const deadline = p.deadline || i.deadline;
+                  const chance = marks ? chanceFor(marks, p.minPercentage) : null;
                   return (
                     <li key={p._id} className="border-t border-gray-100 pt-1">
                       <span className="font-medium">{p.name}</span>
+                      {chance && (
+                        <span className={`ml-1.5 text-[11px] px-1.5 py-0.5 rounded align-middle ${CHANCE_STYLES[chance]}`}>
+                          {chance}
+                        </span>
+                      )}
                       {p.accreditedBy && (
                         <span className="ml-1.5 text-[11px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 align-middle">
                           {p.accreditedBy} accredited
@@ -139,6 +206,11 @@ export default function Institutions() {
                         <span className={isPast(deadline) ? 'text-red-600' : 'text-gray-600'}>
                           {' '}· {isPast(deadline) ? 'Closed' : `Apply by ${formatDate(deadline)}`}
                         </span>
+                      )}
+                      {!user && isKnown(p.minPercentage) && (
+                        <Link to={chanceLink} className="ml-1.5 text-xs text-indigo-700 underline">
+                          See your chance
+                        </Link>
                       )}
                     </li>
                   );

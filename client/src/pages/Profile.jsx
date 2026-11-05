@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 
 const FIELDS = [
@@ -29,7 +30,16 @@ function parseInterests(text) {
     });
 }
 
+// Only allow returning to pages on this site
+function safeNext(value) {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return null;
+  return value;
+}
+
 export default function Profile() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const next = safeNext(params.get('next'));
   const [p, setP] = useState({ field: 'other', percentage: '', city: '', maxBudget: '' });
   const [interestsText, setInterestsText] = useState('');
   const [msg, setMsg] = useState(null); // { text, ok }
@@ -48,10 +58,10 @@ export default function Profile() {
   const isSelected = (word) => current.some((i) => i.toLowerCase() === word.toLowerCase());
 
   function toggle(word) {
-    const next = isSelected(word)
+    const list = isSelected(word)
       ? current.filter((i) => i.toLowerCase() !== word.toLowerCase())
       : [...current, word];
-    setInterestsText(next.join(', '));
+    setInterestsText(list.join(', '));
   }
 
   async function save(e) {
@@ -60,6 +70,10 @@ export default function Profile() {
     setSaving(true);
     try {
       await api('/profile', { method: 'PUT', body: { ...p, interests: current } });
+      if (next) {
+        navigate(next, { replace: true });
+        return;
+      }
       setMsg({ text: 'Profile saved ✅', ok: true });
     } catch (err) {
       setMsg({ text: err.message, ok: false });
@@ -71,6 +85,11 @@ export default function Profile() {
   return (
     <form onSubmit={save} className="max-w-md bg-white p-6 rounded-xl shadow space-y-3">
       <h2 className="text-2xl font-semibold">My Profile</h2>
+      {next && (
+        <p className="text-sm bg-indigo-50 border border-indigo-200 text-indigo-800 rounded p-2">
+          Add your marks and field, then save to see your chance of admission.
+        </p>
+      )}
 
       <label className="block text-sm">Field of interest
         <select className="w-full border rounded p-2 mt-1" value={p.field} onChange={set('field')}>
@@ -117,12 +136,10 @@ export default function Profile() {
       </div>
 
       <button disabled={saving} className="bg-indigo-700 text-white px-4 py-2 rounded disabled:opacity-50">
-        {saving ? 'Saving...' : 'Save'}
+        {saving ? 'Saving...' : next ? 'Save and continue' : 'Save'}
       </button>
 
-      {msg && (
-        <p className={`text-sm ${msg.ok ? 'text-green-700' : 'text-red-600'}`}>{msg.text}</p>
-      )}
+      {msg && <p className={`text-sm ${msg.ok ? 'text-green-700' : 'text-red-600'}`}>{msg.text}</p>}
     </form>
   );
 }

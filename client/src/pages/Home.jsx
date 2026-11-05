@@ -7,10 +7,11 @@ const BRAND = '#4338CA'; // Royal Indigo, the one theme colour
 const BORDER = '#E0E7FF';
 const DISPLAY_FONT = { fontFamily: 'var(--font-heading)' };
 
+// Short label on the chip, full question sent to the AI
 const COMMON_QUESTIONS = [
-  'Can I get BS Computer Science in Lahore with 82% in FSc?',
-  'How is the MBBS merit calculated in Punjab?',
-  'Which engineering fields have good jobs in Pakistan?',
+  { label: 'BS CS in Lahore with 82%?', question: 'Can I get BS Computer Science in Lahore with 82% in FSc?' },
+  { label: 'How is MBBS merit calculated?', question: 'How is the MBBS merit calculated in Punjab?' },
+  { label: 'Best engineering fields for jobs', question: 'Which engineering fields have good jobs in Pakistan?' },
 ];
 
 const STEPS = [
@@ -55,7 +56,7 @@ function AiBadge({ small = false }) {
 }
 
 export default function Home() {
-  const { user, demoLogin } = useAuth();
+  const { user } = useAuth();
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]); // { role: 'user' | 'assistant', text }
   const [busy, setBusy] = useState(false);
@@ -92,9 +93,9 @@ export default function Home() {
     updateMessages(next);
 
     try {
-      // Visitors without an account use the demo account for now
-      if (!user) await demoLogin();
-      const data = await api('/counseling', { method: 'POST', body: { messages: next } });
+      // Students get answers from their profile; visitors get general answers without an account
+      const path = user ? '/counseling' : '/counseling/public';
+      const data = await api(path, { method: 'POST', body: { messages: next } });
       updateMessages([...messagesRef.current, { role: 'assistant', text: data.reply }]);
     } catch (err) {
       setError(err.message);
@@ -143,7 +144,9 @@ export default function Home() {
                   <AiBadge />
                   <div>
                     <p className="text-sm font-semibold text-gray-900">Apply Hub counselor</p>
-                    <p className="text-xs text-gray-500">Answers based on your profile</p>
+                    <p className="text-xs text-gray-500">
+                      {user ? 'Answers based on your profile' : 'General answers. Log in for advice based on your marks.'}
+                    </p>
                   </div>
                 </div>
                 <button
@@ -255,27 +258,40 @@ export default function Home() {
           </div>
 
           {hasChat ? (
-            <p className="mt-3 text-xs text-indigo-100">AI can make mistakes. Check important details on the official website.</p>
+            <p className="mt-3 text-xs text-indigo-100">
+              AI can make mistakes. Check important details on the official website.
+              {!user && (
+                <>
+                  {' '}
+                  <Link to="/login?mode=register&next=%2F" className="underline font-semibold text-white">
+                    Create a free account
+                  </Link>{' '}
+                  for advice based on your marks.
+                </>
+              )}
+            </p>
           ) : (
             <div className="mt-8">
               <p className="text-sm font-medium text-indigo-100 mb-3">Students often ask</p>
-              <div className="flex flex-wrap justify-center gap-2 max-w-2xl mx-auto">
+              {/* One row of chips; on small screens it scrolls sideways */}
+              <div className="flex flex-nowrap sm:justify-center gap-2 max-w-4xl mx-auto overflow-x-auto pb-2 -mx-4 px-4 sm:mx-auto sm:px-0">
                 {COMMON_QUESTIONS.map((q) => (
                   <button
-                    key={q}
+                    key={q.label}
                     type="button"
-                    onClick={() => ask(q)}
+                    onClick={() => ask(q.question)}
                     disabled={busy}
-                    className="text-sm text-white bg-white/10 border border-white/30 rounded-full px-4 py-2 hover:bg-white/20 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                    title={q.question}
+                    className="shrink-0 whitespace-nowrap text-sm text-white bg-white/10 border border-white/30 rounded-full px-4 py-2 hover:bg-white/20 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                   >
-                    {q}
+                    {q.label}
                   </button>
                 ))}
               </div>
               <p className="mt-6 text-sm text-indigo-100">
                 Covering{' '}
                 <Link to="/institutions" className="font-semibold text-white underline underline-offset-4">
-                  {stats ? `${stats.total} HEC recognised universities` : 'all HEC recognised universities'}
+                  {stats ? `${stats.total} universities and colleges` : 'universities and colleges'}
                 </Link>{' '}
                 across Pakistan.
               </p>
@@ -307,13 +323,13 @@ export default function Home() {
           </ol>
         </section>
 
-        {/* Universities by province */}
+        {/* Institutions by province */}
         {stats?.byProvince?.length > 0 && (
           <section>
             <h2 className="text-2xl font-bold mb-1 text-center" style={{ ...DISPLAY_FONT, color: BRAND }}>
-              Universities by province
+              Universities and colleges by province
             </h2>
-            <p className="text-gray-600 mb-4 text-center">Choose a province to see its HEC recognised universities.</p>
+            <p className="text-gray-600 mb-4 text-center">Choose a province to see its recognised universities and colleges.</p>
             <ul
               className="grid gap-x-12 md:grid-cols-2 bg-white border rounded-xl px-5 py-2 max-w-3xl mx-auto"
               style={{ borderColor: BORDER }}
@@ -336,8 +352,8 @@ export default function Home() {
         )}
 
         <p className="text-xs text-gray-500 text-center">
-          Apply Hub is an independent guide and is not affiliated with HEC or any university. Always confirm merit, fees
-          and deadlines on the official website.
+          Apply Hub is an independent guide and is not affiliated with HEC, PMDC or any university. Always confirm merit,
+          fees and deadlines on the official website.
         </p>
       </div>
     </div>
