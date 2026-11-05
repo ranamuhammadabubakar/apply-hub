@@ -6,7 +6,8 @@ const programSchema = new mongoose.Schema({
   minPercentage: { type: Number, min: 0, max: 100, default: null }, // null means not published yet
   feePerYear: { type: Number, min: 0, default: null }, // null means not published yet
   deadline: Date, // optional; when empty the institution deadline is used
-   accreditedBy: { type: String, enum: ['PEC', 'NCEAC', 'PMDC', 'NBEAC'] }, // accreditation council, if known
+  accreditedBy: { type: String, enum: ['PEC', 'NCEAC', 'PMDC', 'NBEAC'] }, // accreditation council, if known
+  sourceUrl: { type: String, trim: true }, // page the fee, merit or deadline was taken from
 });
 
 const institutionSchema = new mongoose.Schema(
@@ -20,6 +21,8 @@ const institutionSchema = new mongoose.Schema(
     category: { type: String, trim: true }, // HEC category, e.g. "Engineering & Technology"
     website: { type: String, trim: true },
     admissionUrl: { type: String, trim: true }, // official admission portal
+    tourVideoUrl: { type: String, trim: true }, // official YouTube campus tour video
+    tourCheckedAt: Date, // when the tour video search last ran for this institution
     description: { type: String, trim: true },
     deadline: Date,
     lastVerifiedAt: Date, // when an admin last checked this data against the official source

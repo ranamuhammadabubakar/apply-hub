@@ -20,6 +20,13 @@ function formatDate(value) {
   return new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+// Empty -> null (not published); otherwise a number
+function toNumberOrNull(value) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 // Program line: Name | field | min % | fee per year | deadline (optional, YYYY-MM-DD)
 // An empty min % or fee means "not published yet".
 const programsToText = (programs = []) =>
@@ -36,14 +43,7 @@ const programsToText = (programs = []) =>
     })
     .join('\n');
 
-// Empty text -> null (not published); otherwise a number
-function toNumberOrNull(text) {
-  if (text === undefined || text === '') return null;
-  const n = Number(text);
-  return Number.isNaN(n) ? null : n;
-}
-
-// originalPrograms keeps fields that are not in the text, such as the accreditation council
+// originalPrograms keeps fields that are not in the text, such as accreditation and the source link
 function textToPrograms(text, originalPrograms = []) {
   const byName = new Map(originalPrograms.map((p) => [p.name.toLowerCase(), p]));
   return text
@@ -66,6 +66,7 @@ function textToPrograms(text, originalPrograms = []) {
         feePerYear: toNumberOrNull(fee),
         deadline: deadline || null,
         accreditedBy: original?.accreditedBy || null,
+        sourceUrl: original?.sourceUrl || null,
       };
     });
 }
@@ -81,6 +82,15 @@ export default function Admin() {
   const [editingPrograms, setEditingPrograms] = useState([]);
   const [msg, setMsg] = useState('');
   const [search, setSearch] = useState('');
+
+  // AI extraction
+  const [aiUrl, setAiUrl] = useState('');
+  const [aiText, setAiText] = useState('');
+  const [usePaste, setUsePaste] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiResult, setAiResult] = useState(null); // { sourceUrl, programs, institutionDeadline, notes }
+  const [useAiDeadline, setUseAiDeadline] = useState(false);
 
   const isAdmin = user?.role === 'admin';
 
@@ -118,6 +128,15 @@ export default function Admin() {
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
+  function resetAi(url = '') {
+    setAiUrl(url);
+    setAiText('');
+    setUsePaste(false);
+    setAiError('');
+    setAiResult(null);
+    setUseAiDeadline(false);
+  }
+
   function startEdit(i) {
     setEditingId(i._id);
     setEditingPrograms(i.programs || []);
@@ -133,6 +152,8 @@ export default function Admin() {
       programsText: programsToText(i.programs),
       verifiedNow: false,
     });
+    resetAi(i.admissionUrl || i.website || '');
+    setMsg('');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -140,6 +161,7 @@ export default function Admin() {
     setEditingId(null);
     setEditingPrograms([]);
     setForm(emptyForm);
+    resetAi();
   }
 
   async function saveInstitution(e) {
@@ -190,6 +212,94 @@ export default function Admin() {
     }
   }
 
+  // ---------- AI extraction ----------
+
+  async function fetchWithAi() {
+    setAiError('');
+    setAiResult(null);
+    if (usePaste ? !aiText.trim() : !aiUrl.trim()) {
+      setAiError(usePaste ? 'Please paste the page text first.' : 'Please enter the admission or fee page link.');
+      return;
+    }
+    setAiBusy(true);
+    try {
+      const body = usePaste ? { text: aiText, url: aiUrl.trim() } : { url: aiUrl.trim() };
+      const d = await api(`/institutions/${editingId}/extract`, { method: 'POST', body });
+      setAiResult({ ...d, programs: d.programs.map((p) => ({ ...p, selected: true })) });
+      setUseAiDeadline(Boolean(d.institutionDeadline) && !form.deadline);
+      if (d.programs.length === 0) setAiError('No undergraduate programs were found on this page.');
+    } catch (err) {
+      setAiError(err.message);
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function updateAiProgram(index, key, value) {
+    setAiResult((r) => ({
+      ...r,
+      programs: r.programs.map((p, i) => (i === index ? { ...p, [key]: value } : p)),
+    }));
+  }
+
+  // Names already in the Programs box, to label each AI row as "New" or "Update"
+  const currentNames = new Set(
+    form.programsText
+      .split('\n')
+      .map((l) => l.split('|')[0].trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  function applyAiResults() {
+    let current;
+    try {
+      current = textToPrograms(form.programsText, editingPrograms);
+    } catch (err) {
+      setAiError(`Fix the Programs box first: ${err.message}`);
+      return;
+    }
+
+    const byName = new Map(current.map((p) => [p.name.toLowerCase(), p]));
+    let added = 0;
+    let updated = 0;
+
+    for (const p of aiResult.programs.filter((x) => x.selected)) {
+      const name = String(p.name || '').trim();
+      if (!name) continue;
+      const values = {
+        field: FIELDS.includes(p.field) ? p.field : 'other',
+        minPercentage: toNumberOrNull(p.minPercentage),
+        feePerYear: toNumberOrNull(p.feePerYear),
+        deadline: p.deadline || null,
+      };
+      const existing = byName.get(name.toLowerCase());
+      if (existing) {
+        // Only fill in values the AI found; never wipe out what is already there
+        for (const [key, value] of Object.entries(values)) {
+          if (value !== null) existing[key] = value;
+        }
+        if (aiResult.sourceUrl) existing.sourceUrl = aiResult.sourceUrl;
+        updated++;
+      } else {
+        const program = { name, ...values, accreditedBy: null, sourceUrl: aiResult.sourceUrl || null };
+        current.push(program);
+        byName.set(name.toLowerCase(), program);
+        added++;
+      }
+    }
+
+    setEditingPrograms(current);
+    setForm((f) => ({
+      ...f,
+      programsText: programsToText(current),
+      deadline: useAiDeadline && aiResult.institutionDeadline ? aiResult.institutionDeadline : f.deadline,
+    }));
+    setMsg(
+      `${added} programs added and ${updated} updated in the Programs box. Check them, tick "verified" if they are correct, then press Update to save.`
+    );
+    setAiResult(null);
+  }
+
   const tabBtn = (key, label) => (
     <button
       onClick={() => setTab(key)}
@@ -198,6 +308,8 @@ export default function Admin() {
       {label}
     </button>
   );
+
+  const selectedCount = aiResult ? aiResult.programs.filter((p) => p.selected).length : 0;
 
   return (
     <div>
@@ -211,7 +323,7 @@ export default function Admin() {
       {tab === 'institutions' && (
         <div className="space-y-6">
           <form onSubmit={saveInstitution} className="bg-white p-4 rounded-xl shadow space-y-3">
-            <h3 className="font-semibold">{editingId ? 'Edit institution' : 'Add institution'}</h3>
+            <h3 className="font-semibold">{editingId ? `Edit institution: ${form.name}` : 'Add institution'}</h3>
             <div className="grid gap-3 sm:grid-cols-2">
               <input className="border rounded p-2" placeholder="Name" value={form.name} onChange={set('name')} required />
               <input className="border rounded p-2" placeholder="City" value={form.city} onChange={set('city')} required />
@@ -230,6 +342,134 @@ export default function Admin() {
               <input className="border rounded p-2" placeholder="Official admission portal link" value={form.admissionUrl} onChange={set('admissionUrl')} />
             </div>
             <textarea className="w-full border rounded p-2" rows="2" placeholder="Description" value={form.description} onChange={set('description')} />
+
+            {/* AI extraction: only for an institution that is already saved */}
+            {editingId ? (
+              <div className="border border-indigo-200 bg-indigo-50/50 rounded-xl p-4 space-y-3">
+                <div>
+                  <p className="font-semibold text-indigo-900">Fetch programs with AI</p>
+                  <p className="text-xs text-gray-600">
+                    Use the official admission or fee page. The AI only suggests; nothing is saved until you press Update.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-4 text-sm">
+                  <label className="flex items-center gap-1.5">
+                    <input type="radio" checked={!usePaste} onChange={() => setUsePaste(false)} /> Read a web page
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    <input type="radio" checked={usePaste} onChange={() => setUsePaste(true)} /> Paste text
+                  </label>
+                </div>
+
+                <input
+                  className="w-full border rounded p-2 bg-white"
+                  placeholder="https://university.edu.pk/admissions/fee-structure"
+                  value={aiUrl}
+                  onChange={(e) => setAiUrl(e.target.value)}
+                />
+                {usePaste && (
+                  <textarea
+                    className="w-full border rounded p-2 bg-white text-sm"
+                    rows="6"
+                    placeholder="Open the page in your browser, select all the text (Ctrl + A), copy it and paste it here"
+                    value={aiText}
+                    onChange={(e) => setAiText(e.target.value)}
+                  />
+                )}
+
+                <button
+                  type="button"
+                  onClick={fetchWithAi}
+                  disabled={aiBusy}
+                  className="bg-indigo-700 text-white px-4 py-2 rounded disabled:opacity-50"
+                >
+                  {aiBusy ? 'Reading the page...' : 'Fetch with AI'}
+                </button>
+                {aiError && <p className="text-sm text-red-600">{aiError}</p>}
+
+                {aiResult && aiResult.programs.length > 0 && (
+                  <div className="space-y-3">
+                    {aiResult.notes && <p className="text-sm text-gray-700"><span className="font-semibold">AI notes:</span> {aiResult.notes}</p>}
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm bg-white border rounded">
+                        <thead className="bg-gray-50 text-left">
+                          <tr>
+                            <th className="p-2">Use</th>
+                            <th className="p-2">Program</th>
+                            <th className="p-2">Field</th>
+                            <th className="p-2">Merit %</th>
+                            <th className="p-2">Fee per year</th>
+                            <th className="p-2">Deadline</th>
+                            <th className="p-2">Evidence from the page</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {aiResult.programs.map((p, i) => (
+                            <tr key={i} className={`border-t align-top ${p.selected ? '' : 'opacity-50'}`}>
+                              <td className="p-2">
+                                <input
+                                  type="checkbox"
+                                  checked={p.selected}
+                                  onChange={(e) => updateAiProgram(i, 'selected', e.target.checked)}
+                                  aria-label={`Use ${p.name}`}
+                                />
+                              </td>
+                              <td className="p-2 min-w-48">
+                                <input className="border rounded p-1 w-full" value={p.name} onChange={(e) => updateAiProgram(i, 'name', e.target.value)} />
+                                <span className={`text-[11px] ${currentNames.has(p.name.trim().toLowerCase()) ? 'text-blue-700' : 'text-green-700'}`}>
+                                  {currentNames.has(p.name.trim().toLowerCase()) ? 'Updates an existing program' : 'New program'}
+                                </span>
+                              </td>
+                              <td className="p-2">
+                                <select className="border rounded p-1" value={p.field} onChange={(e) => updateAiProgram(i, 'field', e.target.value)}>
+                                  {FIELDS.map((f) => <option key={f} value={f}>{f}</option>)}
+                                </select>
+                              </td>
+                              <td className="p-2">
+                                <input className="border rounded p-1 w-20" value={p.minPercentage ?? ''} onChange={(e) => updateAiProgram(i, 'minPercentage', e.target.value)} />
+                              </td>
+                              <td className="p-2">
+                                <input className="border rounded p-1 w-28" value={p.feePerYear ?? ''} onChange={(e) => updateAiProgram(i, 'feePerYear', e.target.value)} />
+                              </td>
+                              <td className="p-2">
+                                <input className="border rounded p-1 w-32" type="date" value={p.deadline || ''} onChange={(e) => updateAiProgram(i, 'deadline', e.target.value)} />
+                              </td>
+                              <td className="p-2 text-xs text-gray-600 max-w-xs">{p.evidence || <span className="text-gray-400">No fee, merit or date found</span>}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {aiResult.institutionDeadline && (
+                      <label className="flex items-center gap-2 text-sm">
+                        <input type="checkbox" checked={useAiDeadline} onChange={(e) => setUseAiDeadline(e.target.checked)} />
+                        Use {formatDate(aiResult.institutionDeadline)} as the institution deadline
+                      </label>
+                    )}
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={applyAiResults}
+                        disabled={selectedCount === 0}
+                        className="bg-green-700 text-white px-4 py-2 rounded disabled:opacity-50"
+                      >
+                        Add {selectedCount} selected to the list
+                      </button>
+                      <button type="button" onClick={() => setAiResult(null)} className="border px-4 py-2 rounded bg-white">
+                        Discard
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500">Tip: after adding an institution, press Edit to fetch its programs with AI.</p>
+            )}
+
             <label className="block text-sm">
               Programs, one per line: Name | field | min % | fee per year | deadline (optional)
               <textarea

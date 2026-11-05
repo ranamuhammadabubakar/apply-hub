@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../context/AuthContext';
+import VirtualTour, { mapsLink } from '../components/VirtualTour';
 
 const TYPE_LABELS = {
   university: 'University',
@@ -62,6 +63,7 @@ export default function Institutions() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [marks, setMarks] = useState(null); // the student's FSc %, when logged in
+  const [tourOf, setTourOf] = useState(null); // institution whose virtual tour is open
 
   // Where to come back to after logging in
   const returnTo = encodeURIComponent(location.pathname + location.search);
@@ -222,7 +224,7 @@ export default function Institutions() {
               </p>
             )}
 
-            <div className="mt-auto pt-3 flex flex-wrap items-center gap-2">
+            <div className="mt-auto pt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
               {i.admissionUrl && (
                 <a href={i.admissionUrl} target="_blank" rel="noreferrer" className="bg-indigo-700 text-white text-sm px-3 py-1.5 rounded">
                   Apply on official portal
@@ -233,6 +235,14 @@ export default function Institutions() {
                   Official website
                 </a>
               )}
+              {i.tourVideoUrl && (
+                <button type="button" onClick={() => setTourOf(i)} className="text-sm text-indigo-700 underline">
+                  🎥 Virtual tour
+                </button>
+              )}
+              <a href={mapsLink(i.name, i.city)} target="_blank" rel="noreferrer" className="text-sm text-indigo-700 underline">
+                Map
+              </a>
               <span className="text-xs text-gray-500 ml-auto">
                 {i.lastVerifiedAt ? `Info verified on ${formatDate(i.lastVerifiedAt)}` : 'Not yet verified'}
               </span>
@@ -255,6 +265,8 @@ export default function Institutions() {
           </button>
         </div>
       )}
+
+      {tourOf && <VirtualTour institution={tourOf} onClose={() => setTourOf(null)} />}
     </div>
   );
 }
