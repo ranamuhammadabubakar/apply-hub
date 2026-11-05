@@ -29,6 +29,17 @@ const CHANCE_STYLES = {
   'Check merit': 'bg-gray-100 text-gray-700',
 };
 
+// Same short forms as the server, so matching programs can be highlighted
+const SEARCH_SYNONYMS = {
+  mmbs: 'mbbs', mbbbs: 'mbbs', bscs: 'computer', cs: 'computer', bsse: 'software', se: 'software',
+  bsit: 'information', it: 'information', ee: 'electrical', me: 'mechanical', ce: 'civil',
+  ai: 'artificial', pharmd: 'pharm', pharmacy: 'pharm', dentist: 'bds', dental: 'bds',
+};
+const FIELD_WORDS = {
+  medical: 'medical', medicine: 'medical', doctor: 'medical', engineering: 'engineering', engineer: 'engineering',
+  business: 'business', computing: 'cs', computer: 'cs',
+};
+
 const isKnown = (value) => value !== null && value !== undefined;
 
 // Same thresholds as the recommendations on the server
@@ -39,6 +50,18 @@ function chanceFor(marks, minPercentage) {
   if (margin >= 0) return 'Good chance';
   if (margin >= -5) return 'Reach';
   return 'Unlikely';
+}
+
+// Does this program match what the student typed?
+function programMatches(program, q) {
+  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return false;
+  const name = program.name.toLowerCase();
+  return words.some((raw) => {
+    const w = SEARCH_SYNONYMS[raw] || raw;
+    if (FIELD_WORDS[raw] && program.field === FIELD_WORDS[raw]) return true;
+    return w.length >= 2 && new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(name);
+  });
 }
 
 function formatDate(value) {
@@ -144,15 +167,21 @@ export default function Institutions() {
       )}
 
       <div className="flex flex-wrap gap-3 mb-2">
-        <input className="border rounded p-2 flex-1 min-w-48" placeholder="Search by name, e.g. LUMS, FAST, UET Lahore" value={q} onChange={(e) => setQ(e.target.value)} />
-        <input className="border rounded p-2 w-36" placeholder="City" value={city} onChange={(e) => setCity(e.target.value)} />
-        <select className="border rounded p-2" value={province} onChange={(e) => setProvince(e.target.value)}>
+        <input
+          className="border rounded p-2 flex-1 min-w-48"
+          placeholder="Search a university or program, e.g. LUMS, MBBS, BS Computer Science"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          aria-label="Search universities or programs"
+        />
+        <input className="border rounded p-2 w-36" placeholder="City" value={city} onChange={(e) => setCity(e.target.value)} aria-label="City" />
+        <select className="border rounded p-2" value={province} onChange={(e) => setProvince(e.target.value)} aria-label="Province">
           <option value="">All provinces</option>
           {PROVINCES.map((p) => (
             <option key={p} value={p}>{p}</option>
           ))}
         </select>
-        <select className="border rounded p-2" value={sector} onChange={(e) => setSector(e.target.value)}>
+        <select className="border rounded p-2" value={sector} onChange={(e) => setSector(e.target.value)} aria-label="Public or private">
           <option value="">Public and private</option>
           <option value="public">Public</option>
           <option value="private">Private</option>
@@ -163,92 +192,102 @@ export default function Institutions() {
       {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {items.map((i) => (
-          <div key={i._id} className="bg-white p-4 rounded-xl shadow flex flex-col">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold text-lg">{i.name}</h3>
-              <span
-                className={`text-xs px-2 py-0.5 rounded-full ${
-                  i.sector === 'public' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'
-                }`}
-              >
-                {i.sector === 'public' ? 'Public' : 'Private'}
-              </span>
-            </div>
-            <p className="text-sm text-gray-600">
-              {i.city}
-              {i.province && i.province !== i.city ? `, ${i.province}` : ''} · {TYPE_LABELS[i.type] || i.type}
-              {i.category ? ` · ${i.category}` : ''}
-            </p>
-            {i.description && <p className="text-sm text-gray-700 mt-1">{i.description}</p>}
-
-            {i.programs.length > 0 ? (
-              <ul className="mt-3 text-sm space-y-1">
-                {i.programs.map((p) => {
-                  const deadline = p.deadline || i.deadline;
-                  const chance = marks ? chanceFor(marks, p.minPercentage) : null;
-                  return (
-                    <li key={p._id} className="border-t border-gray-100 pt-1">
-                      <span className="font-medium">{p.name}</span>
-                      {chance && (
-                        <span className={`ml-1.5 text-[11px] px-1.5 py-0.5 rounded align-middle ${CHANCE_STYLES[chance]}`}>
-                          {chance}
-                        </span>
-                      )}
-                      {p.accreditedBy && (
-                        <span className="ml-1.5 text-[11px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 align-middle">
-                          {p.accreditedBy} accredited
-                        </span>
-                      )}
-                      <span className="text-gray-600">
-                        {' '}· {isKnown(p.minPercentage) ? `min ${p.minPercentage}%` : 'merit not published'}
-                        {' '}· {isKnown(p.feePerYear) ? `PKR ${p.feePerYear.toLocaleString('en-US')}/yr` : 'fee not published'}
-                      </span>
-                      {deadline && (
-                        <span className={isPast(deadline) ? 'text-red-600' : 'text-gray-600'}>
-                          {' '}· {isPast(deadline) ? 'Closed' : `Apply by ${formatDate(deadline)}`}
-                        </span>
-                      )}
-                      {!user && isKnown(p.minPercentage) && (
-                        <Link to={chanceLink} className="ml-1.5 text-xs text-indigo-700 underline">
-                          See your chance
-                        </Link>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="mt-3 text-sm text-gray-500">
-                Program details are not added yet. Please check the official website.
+        {items.map((i) => {
+          // Programs that match the search come first and are highlighted
+          const programs = q.trim()
+            ? [...i.programs].sort((a, b) => Number(programMatches(b, q)) - Number(programMatches(a, q)))
+            : i.programs;
+          return (
+            <div key={i._id} className="bg-white p-4 rounded-xl shadow flex flex-col">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-semibold text-lg">{i.name}</h3>
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full ${
+                    i.sector === 'public' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  {i.sector === 'public' ? 'Public' : 'Private'}
+                </span>
+              </div>
+              <p className="text-sm text-gray-600">
+                {i.city}
+                {i.province && i.province !== i.city ? `, ${i.province}` : ''} · {TYPE_LABELS[i.type] || i.type}
+                {i.category ? ` · ${i.category}` : ''}
               </p>
-            )}
+              {i.description && <p className="text-sm text-gray-700 mt-1">{i.description}</p>}
 
-            <div className="mt-auto pt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-              {i.admissionUrl && (
-                <a href={i.admissionUrl} target="_blank" rel="noreferrer" className="bg-indigo-700 text-white text-sm px-3 py-1.5 rounded">
-                  Apply on official portal
+              {programs.length > 0 ? (
+                <ul className="mt-3 text-sm space-y-1">
+                  {programs.map((p) => {
+                    const deadline = p.deadline || i.deadline;
+                    const chance = marks ? chanceFor(marks, p.minPercentage) : null;
+                    const matched = q.trim() && programMatches(p, q);
+                    return (
+                      <li
+                        key={p._id}
+                        className={`border-t border-gray-100 pt-1 ${matched ? 'bg-yellow-50 -mx-2 px-2 rounded' : ''}`}
+                      >
+                        <span className="font-medium">{p.name}</span>
+                        {chance && (
+                          <span className={`ml-1.5 text-[11px] px-1.5 py-0.5 rounded align-middle ${CHANCE_STYLES[chance]}`}>
+                            {chance}
+                          </span>
+                        )}
+                        {p.accreditedBy && (
+                          <span className="ml-1.5 text-[11px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 align-middle">
+                                                        {p.accreditedBy === 'PMDC' ? 'PMDC recognised' : `${p.accreditedBy} accredited`}
+                          </span>
+                        )}
+                        <span className="text-gray-600">
+                          {' '}· {isKnown(p.minPercentage) ? `min ${p.minPercentage}%` : 'merit not published'}
+                          {' '}· {isKnown(p.feePerYear) ? `PKR ${p.feePerYear.toLocaleString('en-US')}/yr` : 'fee not published'}
+                        </span>
+                        {deadline && (
+                          <span className={isPast(deadline) ? 'text-red-600' : 'text-gray-600'}>
+                            {' '}· {isPast(deadline) ? 'Closed' : `Apply by ${formatDate(deadline)}`}
+                          </span>
+                        )}
+                        {!user && isKnown(p.minPercentage) && (
+                          <Link to={chanceLink} className="ml-1.5 text-xs text-indigo-700 underline">
+                            See your chance
+                          </Link>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="mt-3 text-sm text-gray-500">
+                  Program details are not added yet. Please check the official website.
+                </p>
+              )}
+
+              <div className="mt-auto pt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                {i.admissionUrl && (
+                  <a href={i.admissionUrl} target="_blank" rel="noreferrer" className="bg-indigo-700 text-white text-sm px-3 py-1.5 rounded">
+                    Apply on official portal
+                  </a>
+                )}
+                {i.website && (
+                  <a href={i.website} target="_blank" rel="noreferrer" className="text-sm text-indigo-700 underline">
+                    Official website
+                  </a>
+                )}
+                {i.tourVideoUrl && (
+                  <button type="button" onClick={() => setTourOf(i)} className="text-sm text-indigo-700 underline">
+                    🎥 Virtual tour
+                  </button>
+                )}
+                <a href={mapsLink(i.name, i.city)} target="_blank" rel="noreferrer" className="text-sm text-indigo-700 underline">
+                  Map
                 </a>
-              )}
-              {i.website && (
-                <a href={i.website} target="_blank" rel="noreferrer" className="text-sm text-indigo-700 underline">
-                  Official website
-                </a>
-              )}
-              {i.tourVideoUrl && (
-                <button type="button" onClick={() => setTourOf(i)} className="text-sm text-indigo-700 underline">
-                  🎥 Virtual tour
-                </button>
-              )}
-              <a href={mapsLink(i.name, i.city)} target="_blank" rel="noreferrer" className="text-sm text-indigo-700 underline">
-                Map
-              </a>
-              <span className="text-xs text-gray-500 ml-auto">
-                {i.lastVerifiedAt ? `Info verified on ${formatDate(i.lastVerifiedAt)}` : 'Not yet verified'}
-              </span>
+                <span className="text-xs text-gray-500 ml-auto">
+                  {i.lastVerifiedAt ? `Info verified on ${formatDate(i.lastVerifiedAt)}` : 'Not yet verified'}
+                </span>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {!loading && items.length === 0 && <p className="text-gray-500">No institutions found.</p>}
       </div>
 

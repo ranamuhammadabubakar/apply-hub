@@ -11,7 +11,7 @@ const router = Router();
 const escapeRegex = (text) => String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const INSTITUTION_FIELDS = [
-  'name', 'aliases', 'type', 'sector', 'city', 'website', 'admissionUrl', 'description', 'deadline', 'lastVerifiedAt',
+  'name', 'aliases', 'type', 'sector', 'city', 'website', 'admissionUrl', 'tourVideoUrl', 'description', 'deadline', 'lastVerifiedAt',
 ];
 const PROGRAM_FIELDS = ['name', 'field', 'minPercentage', 'feePerYear', 'deadline', 'accreditedBy', 'sourceUrl'];
 const FIELDS = ['medical', 'engineering', 'cs', 'business', 'other'];
@@ -33,15 +33,57 @@ function cleanInstitution(body) {
   if (Array.isArray(data.aliases)) {
     data.aliases = [...new Set(data.aliases.map((a) => String(a).trim()).filter(Boolean))].slice(0, 15);
   }
+  // Only YouTube links are accepted as tour videos
+  if (data.tourVideoUrl && !/^https:\/\/(www\.)?(youtube\.com|youtu\.be)\//i.test(data.tourVideoUrl)) {
+    data.tourVideoUrl = null;
+  }
   return data;
 }
 
-// Each word must match the start of a word in the name, a short name or the city.
+// ---------- Search ----------
+
+// Common short forms and spelling mistakes students type
+const SEARCH_SYNONYMS = {
+  mmbs: 'mbbs',
+  mbbbs: 'mbbs',
+  bscs: 'computer',
+  cs: 'computer',
+  bsse: 'software',
+  se: 'software',
+  bsit: 'information',
+  it: 'information',
+  ee: 'electrical',
+  me: 'mechanical',
+  ce: 'civil',
+  ai: 'artificial',
+  pharmd: 'pharm',
+  pharmacy: 'pharm',
+  dentist: 'bds',
+  dental: 'bds',
+};
+
+// Words that mean a whole field of study
+const FIELD_WORDS = {
+  medical: 'medical',
+  medicine: 'medical',
+  doctor: 'medical',
+  engineering: 'engineering',
+  engineer: 'engineering',
+  business: 'business',
+  computing: 'cs',
+  computer: 'cs',
+};
+
+// Each word must match the start of a word in the name, a short name, the city or a program.
+// "mbbs lahore" finds medical colleges in Lahore; "lums" finds LUMS.
 function searchFilter(q) {
-  const words = String(q).trim().split(/\s+/).filter(Boolean).slice(0, 6);
-  return words.map((w) => {
+  const words = String(q).trim().toLowerCase().split(/\s+/).filter(Boolean).slice(0, 6);
+  return words.map((raw) => {
+    const w = SEARCH_SYNONYMS[raw] || raw;
     const re = new RegExp(`\\b${escapeRegex(w)}`, 'i');
-    return { $or: [{ name: re }, { aliases: re }, { city: re }] };
+    const options = [{ name: re }, { aliases: re }, { city: re }, { 'programs.name': re }];
+    if (FIELD_WORDS[raw]) options.push({ 'programs.field': FIELD_WORDS[raw] });
+    return { $or: options };
   });
 }
 
